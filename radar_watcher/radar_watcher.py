@@ -24,17 +24,37 @@ read_from_uart()
 
 ### if that works, let's use it
 
-import serial_protocol
+import serial_protocol  # from https://github.com/csRon/HLK-LD2450/
 import serial
+import threading
+import queue
 
 # Open the serial port
 ser = serial.Serial(serial_port, 256000, timeout=1)
+
+### or ALTERNATIVELY create a thread-safe queue and read into it in the background ###
+def serial_reader():
+    ser = serial.Serial('/dev/ttyUSB0', 256000, timeout=1)
+
+    while True:
+        data = ser.read_until(serial_protocol.REPORT_TAIL)
+        data_queue.put(data)
+
+data_queue = queue.Queue()
+
+# Create and start the serial reader thread
+serial_thread = threading.Thread(target=serial_reader)
+serial_thread.daemon = True
+serial_thread.start()
+###  ###
 
 try:
     while True:
         # Read a line from the serial port
         serial_port_line = ser.read_until(serial_protocol.REPORT_TAIL)
-
+        ### or ALTERNATIVELY ###
+        serial_protocol_line = data_queue.get()
+        ###  ###
         all_target_values = serial_protocol.read_radar_data(serial_port_line)
         
         if all_target_values is None:
