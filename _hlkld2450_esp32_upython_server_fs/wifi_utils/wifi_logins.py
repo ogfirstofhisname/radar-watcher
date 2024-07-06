@@ -1,6 +1,6 @@
-wifi_logins = [
-    {"ssid": "ssid1", "password": "password1"},
-    {"ssid": "ssid2", "password": "password2"},
-    {"ssid": "ssid3", "password": "password3"}
-    # put your wifi login credentials here
-]
+wifi_logins = {
+    'ssid0': 'password0',
+    'ssid1': 'password1'
+    # Add more SSID:password pairs here
+    # Use '' for password if the network is open
+}

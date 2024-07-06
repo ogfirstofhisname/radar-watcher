@@ -128,11 +128,11 @@ def read_single_radar_data(uart):
 
 import usocket as socket
 import network
-class WifiServer():
+class WifiServer(hostname='ESP32_server'):
     def __init__(self):
-        self.server_setup()
+        self.server_setup(hostname)
         
-    def server_setup(self):
+    def server_setup(self, hostname):
         self.wlan = network.WLAN(network.STA_IF)
         print('setting up wifi server, is wifi active:', self.wlan.active())
         if not self.wlan.isconnected():
@@ -153,12 +153,13 @@ class WifiServer():
 
     def reconnect(self):
         print('wifi not connected, checking again and trying to reconnect')
-        # wait and check for wifi connection 5 times with wait time of 1 second
-        for i in range(5):
+        # wait and check for wifi connection with exponential backoff, for a total of about 4 minutes
+        for i in range(8):
             if self.wlan.isconnected():
                 return
             else:
-                time.sleep_ms(1000)
+                # exponential backoff
+                time.sleep(1*(2**i))
                 print('wifi not connected, trying again')
         # restart machine to rescan wireless networks and reconnect
         machine.reset()
