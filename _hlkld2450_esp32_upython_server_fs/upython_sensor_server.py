@@ -19,7 +19,7 @@ class WifiSensorServer():
         self.sensor_setup(**sensor_addr_args)
         self.server_setup(hostname, port, poll_wait_time)
         # initialize empty queue
-        self.data_queue = collections.deque((), maxlen=queue_size)
+        self.data_queue = collections.deque((), maxlen=queue_size)   # TODO: move this functionality to the sensor object
         
     def server_setup(self, hostname, port, poll_wait_time):
         # set up network connection
@@ -108,7 +108,7 @@ class WifiSensorServer():
                 # send an IMA
                 client_socket.send('IMA'.encode())
             # if 'get', just send data
-            elif input_data == 'get':
+            elif input_data == 'get':  # TODO: move this functionality to the sensor object
                 print('got get, sending data')
                 # convert the queue to a bytearray and send it
                 data_queue_bytes = b''
@@ -128,10 +128,11 @@ class WifiSensorServer():
                 if input_data == 'clear':
                     print('got clear, clearing queue')
                     # clear queue
-                    self.data_queue.clear()
+                    self.data_queue.clear()  # TODO: move this functionality to the sensor object
                     print(f'queue length: {len(self.data_queue)}')
                 # if 'reset', reset the ESP32
                 elif input_data == 'reset':
+                    # close socket and reset machine
                     print('got reset, resetting machine')
                     time.sleep_ms(50)
                     client_socket.close() 
@@ -139,6 +140,7 @@ class WifiSensorServer():
                     time.sleep_ms(50)
                     # reset machine
                     machine.reset()
+                    time.sleep_ms(500)
             time.sleep_ms(100)                
             client_socket.close() 
             print('socket closed')
@@ -162,6 +164,15 @@ class WifiSensorServer():
         return '', timestamp()
 
     def sync_time_from_network(self, single_try=False):
+        '''
+        Sync the ESP32's internal RTC with the network time, using the ntptime module.
+
+        Args:
+        single_try: bool, if True, only try once to sync time. If False, try 5 times with increasing wait times for a total of about 60 seconds.
+
+        Returns:
+        success: bool, True if time was successfully synced, False otherwise
+        '''
         for i in range(5):
             try:
                 import ntptime  # type: ignore

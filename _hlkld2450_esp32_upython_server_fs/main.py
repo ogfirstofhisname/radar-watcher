@@ -1,4 +1,4 @@
-from server_hostname import server_hostname
+from _hlkld2450_esp32_upython_server_fs.server_hostname_cfg import server_hostname
 # from upython_sensor_server import WifiSensorServer
 
 # wss = WifiSensorServer(
