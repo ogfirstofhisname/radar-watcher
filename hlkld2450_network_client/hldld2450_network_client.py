@@ -1,4 +1,5 @@
 import socket, time
+from threading import Lock
 
 class WifiClient():
     def __init__(self, hostname:str, port:int):
@@ -7,48 +8,110 @@ class WifiClient():
         self.client_setup()
     
     def client_setup(self):
-        try:
-            self.server_ip = self.get_ip_address(self.server_hostname)
-        except Exception as e:
-            raise Exception(f'error, server ip not found, check host name and network status: {e}') from None
-        if self.server_ip is None:
-            raise Exception('error, server ip not found, check host name and network status')
+        # create locks for server status, server ip, last_alive_time
+        self.server_status_lock = Lock()
+        self.server_ip_lock = Lock()
+        self.last_alive_time_lock = Lock()
+        with self.last_alive_time_lock:
+            self.last_alive_time = None
+        ip = self._get_ip_address(self.server_hostname)
+        if ip is not None:
+            self._online()
+            self._alive()
+        else:
+            self._offline()
+        
         # set timeout for socket operations
         socket.setdefaulttimeout(3)  # TODO change to about 10 for normal use
-        @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+        
+    def _online(self):
+        with self.server_status_lock:
+            self.server_status = 'online'
 
-    def get_ip_address(self, hostname):
+    def _offline(self):
+        with self.server_status_lock:
+            self.server_status = 'offline'
+
+    def _alive(self):
+        with self.server_status_lock:
+            self.last_alive_time = time.time()
+
+    def was_alive_recently(self, timeout=10):
+        with self.last_alive_time_lock:
+            lat = self.last_alive_time
+        if lat is None:
+            return False
+        else:
+            return time.time() - lat < timeout
+
+    def _get_ip_address(self, hostname):
         try:
-            return socket.gethostbyname(hostname)
+            ip = socket.gethostbyname(hostname)
+            with self.server_ip_lock:
+                self.server_ip = ip
+            self._online()
+            return ip
         except socket.gaierror:
             print("Invalid hostname. Please check the hostname and try again.")
+            self._offline()
             return None
 
-    def wait(self):
+    def _wait(self):
         time.sleep(0.05)
 
-    # def subscribe_ip(self):   # doesn't return anything
-    #     client_message = 'subscribe ' + self.subscribe_password
-    #     self.transact_with_server(client_message)
-    #     # TODO establish a response for subscribe
+    def transact_with_server(self, client_message:str, timeout=None):
+        '''
+        Takes a string argument and sends it to the server, returning the server's response as bytes.
 
-    def transact_with_server(self, client_message:str, timeout=1):  # always returns strings. Socket is opened for transaction and closed after transaction
+        Args:
+        client_message (str): The message to be sent to the server.
+        timeout (float): The timeout for the socket operations.
+
+        Returns:
+        bytes: The response from the server.
+        '''
         # TODO add try-except and a retry loop with increasing waits until an exception is raised
         # TODO maybe add some kind of echo on server side
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
-            client_socket.settimeout(timeout)  # Set the timeout for the socket
-            client_socket.connect((self.server_ip, self.server_port))
-            self.wait()
-            client_socket.send(client_message.encode())  # TODO implement timeout
-            self.wait()
+        success = False
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+                if timeout is not None:
+                    client_socket.settimeout(timeout)  # Set the timeout for the socket
+                client_socket.connect((self.server_ip, self.server_port))
+                self._wait()
+                client_socket.send(client_message.encode())  # TODO implement timeout
+                self._wait()
 
-            data = b""
-            while True:
-                packet = client_socket.recv(256)  # TODO implement timeout
-                if not packet: 
-                    break
-                data += packet
-                self.wait()
-            print(f'got raw data: {repr(data)}')
-            string_data = data.decode()
-        return string_data
+                data = b""
+                while True:
+                    packet = client_socket.recv(256)  # TODO implement timeout
+                    if not packet: 
+                        break
+                    data += packet
+                    self._wait()
+                print(f'got raw data: {repr(data)}')
+                self._alive()
+                self._online()
+                success = True
+        except socket.timeout:
+            # response was not sent promptly. The server may be in some fault state, or simply busy.
+            print('Socket timed out')
+            data = b''
+        except ConnectionRefusedError:
+            # the server is not accepting connections, may be in some fault state.
+            print('Connection refused')
+            data = b''
+            self._offline()
+        # except ConnectionResetError:
+        #     print('Connection reset')
+        #     data = b''
+        #     self._offline()
+        # except ConnectionAbortedError:
+        #     print('Connection aborted')
+        #     data = b''
+        #     self._offline()
+        except Exception as e:
+            print(f'An exception occurred: {e}')
+            data = b''
+            
+        return success, data
