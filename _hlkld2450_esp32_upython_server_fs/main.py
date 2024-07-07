@@ -20,4 +20,4 @@ wrs = WifiRadarServer(
     uart_tx_pin=16
 )
 
-wss.start_server()
+wrs.start_server()
