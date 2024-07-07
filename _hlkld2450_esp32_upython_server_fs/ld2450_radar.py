@@ -11,6 +11,10 @@ class HLKLD2450Radar():
         radar_data: bytes, the radar data read
         '''
         pass
+        # return the ascii bytes for 'radar_data' for testing
+        example_radar_data = b'radar_data'
+        return example_radar_data
+    
 
     def parse_radar_data(self, radar_data):
         '''

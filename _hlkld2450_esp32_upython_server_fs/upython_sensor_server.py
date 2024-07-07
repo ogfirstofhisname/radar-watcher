@@ -1,5 +1,5 @@
-import usocket as socket
-import network
+import usocket as socket  # type: ignore
+import network  # type: ignore
 from wifi_utils import wifi_login_at_startup as wlas
 import time
 import machine  # type: ignore
@@ -22,17 +22,17 @@ class WifiSensorServer():
         self.data_queue = collections.deque((), maxlen=queue_size)
         
     def server_setup(self, hostname, port, poll_wait_time):
+        # set up network connection
         wlas.connect_to_wifi(hostname)
-        # self.wlan = network.WLAN(network.STA_IF)
         print('setting up wifi server, is wifi active:', self.wlan.active())
         if not self.wlan.isconnected():
                 self.reconnect()
-#         with open('wifi_server_password.txt') as f:
-#             self.password = f.read().strip()
         self.server_ip = self.wlan.ifconfig()[0]
         print('server IP address:', self.server_ip)
         self.server_port = port
         self.hostname = hostname
+
+        # set up server socket
         self.poll_wait_time = poll_wait_time
         self.addr = socket.getaddrinfo(self.server_ip, self.server_port)[0][-1]
         self.server_socket = socket.socket()
@@ -40,6 +40,8 @@ class WifiSensorServer():
         self.server_socket.setblocking(True)
         self.server_socket.settimeout(self.poll_wait_time)
         network.hostname(self.hostname)
+
+        # sync time from network for accurate timestamps
         success = self.sync_time_from_network()
         if not success:
             print('could not sync time from network, timestamps are incorrect')
@@ -61,9 +63,16 @@ class WifiSensorServer():
         machine.reset()
 
     def start_server(self):
+        # TODO add a periodic sync time from network with long period
+
+        # start server listening on the port
         self.server_socket.listen(1)    # only one connection at a time
         print('Server is started, listening on port', self.server_port)
-        while True:   # define periodic check for wifi connection, and contingency if not
+
+        # main loop: read sensor data, check wifi connection, and process client requests (or time out and continue, if no client request)
+        while True:
+            # TODO add a periodic sync time from network with long period
+
             # read sensor into queue
             single_data_row = self.read_single_sensor_data()   # TODO make this a generic sensor read
             self.data_queue.append(single_data_row)
@@ -78,47 +87,52 @@ class WifiSensorServer():
             try:
                 client_socket, client_address = self.server_socket.accept()
             except Exception:
-                # if timed out, just continue
-                # print('wifi server timed out, restarting')
+                # if timed out, just continue: there is no client request
                 continue
 
             # if not timed out, process the client request
             print("Accepted connection from", client_address)
             input_data = client_socket.recv(1024)
             if not input_data:
-                print('got None input')
+                # print('got None input')
                 input_data = ''
             else:
-                print('got non-None input')
+                # print('got non-None input')
                 input_data = input_data.decode() # received string from client
-            print(f'received from client: {input_data}')
+            print(f'received input from client: {input_data}')
 
             # process the string and send a response
             # if empty string, send IMA
             if input_data == '':
                 print('got empty string, sending IMA')
                 # send an IMA
-                client_socket.send('I am alive'.encode())
+                client_socket.send('IMA'.encode())
             # if 'get', just send data
             elif input_data == 'get':
                 print('got get, sending data')
-                # send data
-                # TODO
+                # convert the queue to a bytearray and send it
+                data_queue_bytes = b''
+                while self.data_queue:
+                    temp_data = self.data_queue.popleft()
+                    # print(f'popped {repr(temp_data)}, queue length: {len(self.data_queue)}')
+                    data_queue_bytes += temp_data
+                client_socket.send(data_queue_bytes)
+                print('data sent')
             else:
                 # send ECHO
-                print('got non-get, sending ECHO')
+                print('got nonempty, non-get. sending ECHO')
                 # echo all caps
                 client_socket.send(input_data.upper().encode())
-                print('response sent')
+                print('ECHO sent')
                 # additionally, if 'clear', clear the queue
                 if input_data == 'clear':
                     print('got clear, clearing queue')
                     # clear queue
                     self.data_queue.clear()
-                # if 'reset', reset the machine
+                    print(f'queue length: {len(self.data_queue)}')
+                # if 'reset', reset the ESP32
                 elif input_data == 'reset':
                     print('got reset, resetting machine')
-                    client_socket.send(input_data.upper().encode())
                     time.sleep_ms(50)
                     client_socket.close() 
                     print('socket closed')
@@ -147,13 +161,15 @@ class WifiSensorServer():
         '''
         return '', timestamp()
 
-    def sync_time_from_network(self):
+    def sync_time_from_network(self, single_try=False):
         for i in range(5):
             try:
                 import ntptime  # type: ignore
                 ntptime.settime() # set the rtc datetime from the remote server
                 return True
             except Exception:
+                if single_try:
+                    break
                 time.sleep(1*2**(i+1))
         print('could not sync time from network')
         return False
