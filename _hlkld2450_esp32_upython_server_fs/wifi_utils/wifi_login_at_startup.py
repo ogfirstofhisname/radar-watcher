@@ -4,7 +4,7 @@ import os
 
 def parse_wifi_logins():
     try:
-        from wifi_logins import wifi_logins
+        from wifi_utils.wifi_logins import wifi_logins
         return wifi_logins
     except ImportError:
         print('could not import wifi_logins from wifi_logins.py')
@@ -56,13 +56,14 @@ def connect_to_wifi(hostname='ESP32_server'):
 #                     network.hostname('sensorhub0')
 #                     wlan.config(dhcp_hostname='sensorhub0')
 
-                    return True
+                    return True, wlan
                 time.sleep(1)
             print('Failed to connect to', ssid)
 
     # If it gets here, it failed to connect to any network
     print('Failed to connect to any network')
-    return False
+    return False, None
+
 
 
 

@@ -57,7 +57,7 @@ class WifiClient():
             return None
 
     def _wait(self):
-        time.sleep(0.05)
+        time.sleep(0.01)
 
     def transact_with_server(self, client_message:str, timeout=None):
         '''
@@ -78,8 +78,10 @@ class WifiClient():
                 if timeout is not None:
                     client_socket.settimeout(timeout)  # Set the timeout for the socket
                 client_socket.connect((self.server_ip, self.server_port))
+                print('connected to server')
                 self._wait()
                 client_socket.send(client_message.encode())  # TODO implement timeout
+                print(f'sent message: {client_message}')
                 self._wait()
 
                 data = b""
@@ -88,8 +90,9 @@ class WifiClient():
                     if not packet: 
                         break
                     data += packet
+                    # print(f'got packet: {repr(packet)}')
                     self._wait()
-                print(f'got raw data: {repr(data)}')
+                # print(f'got raw data: {repr(data)}')
                 self._alive()
                 self._online()
                 success = True

@@ -1,5 +1,6 @@
 
 from machine import UART  # type: ignore
+import time
 
 REPORT_HEADER = bytes.fromhex('AAFF0300')
 REPORT_TAIL = bytes.fromhex('55CC')
@@ -29,15 +30,19 @@ class HLKLD2450Radar():
                 break
         return bytes(buffer)
 
-    def read_single_radar_data(self):
+    def read_single_radar_data(self, timeout_ms=1000):
         '''
         Reads without parsing a single 'row' of radar data.
 
         Returns:
         radar_data: bytes, the radar data read
         '''
+        # Calculate deadline for operation
+        deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
         while self.uart.any() == 0:
-            pass
+            if time.ticks_diff(deadline, time.ticks_ms()) < 0:
+                print('uard read timed out')
+                return None
         serial_port_line = self._read_until(REPORT_TAIL)
         return serial_port_line
 

@@ -4,14 +4,16 @@ from wifi_utils import wifi_login_at_startup as wlas
 import time
 import machine  # type: ignore
 import collections
+import struct
 
-def timestamp():
+def timestamp_float():
     # time since epoch in seconds with microsecond precision, equivalent to CPython's time.time()
     nanoseconds = time.time_ns()
     # Convert nanoseconds to microseconds
     microseconds = nanoseconds // 1000
     # Convert microseconds to seconds (as a float)
-    seconds = microseconds / 1_000_000
+    seconds = 1.0*microseconds / 1_000_000
+#     seconds = seconds + 946684800.0  # correction from ESP32 epoch to Unix epoch
     return seconds
 
 class WifiSensorServer():
@@ -19,11 +21,17 @@ class WifiSensorServer():
         self.sensor_setup(**sensor_addr_args)
         self.server_setup(hostname, port, poll_wait_time)
         # initialize empty queue
-        self.data_queue = collections.deque((), maxlen=queue_size)   # TODO: move this functionality to the sensor object
+        self.data_queue = collections.deque((), queue_size)   # TODO: move this functionality to the sensor object
         
     def server_setup(self, hostname, port, poll_wait_time):
         # set up network connection
-        wlas.connect_to_wifi(hostname)
+        success, wlan = wlas.connect_to_wifi(hostname)
+        if not success or wlan is not None:
+            self.wlan = wlan
+        else:
+            print('could not connect to wifi, exiting')
+            time.sleep_ms(5000)
+            machine.reset()
         print('setting up wifi server, is wifi active:', self.wlan.active())
         if not self.wlan.isconnected():
                 self.reconnect()
@@ -39,14 +47,15 @@ class WifiSensorServer():
         self.server_socket.bind(self.addr)
         self.server_socket.setblocking(True)
         self.server_socket.settimeout(self.poll_wait_time)
+        print(f'socket timeout set to {self.poll_wait_time}')
         network.hostname(self.hostname)
 
-        # sync time from network for accurate timestamps
-        success = self.sync_time_from_network()
-        if not success:
-            print('could not sync time from network, timestamps are incorrect')
-        else:
-            print('time synced from network:', time.localtime())
+#         # sync time from network for accurate timestamps
+#         success = self.sync_time_from_network()
+#         if not success:
+#             print('could not sync time from network, timestamps are incorrect')
+#         else:
+#             print('time synced from network:', time.localtime())
         print('wifi server setup complete')
 
     def reconnect(self):
@@ -62,21 +71,87 @@ class WifiSensorServer():
         # restart machine to rescan wireless networks and reconnect
         machine.reset()
 
+    def convert_queue_to_bytes(self):
+        # data_queue_bytes = b''
+        # while self.data_queue:
+        #     temp_data = self.data_queue.popleft()
+        #     # print(f'popped {repr(temp_data)}, queue length: {len(self.data_queue)}')
+        #     data_queue_bytes += temp_data
+
+        # Define the format string for a single tuple (timestamp, data)
+        # 'd' for double (float) and '30s' for 30-byte bytes
+        tuple_format = 'd30s'
+
+        # Define the format string for the entire deque + the final timestamp
+        # Assuming we have n elements in the deque
+        def get_format_string(n):
+            return f'{tuple_format * n}d'
+
+        # # Example deque of tuples
+        # data_deque = deque([
+        #     (1627889187.123, b'abcdefghijklmnopqrstuvwxyz1234'),
+        #     (1627889190.456, b'abcdefghijklmnopqrstuvwxyz5678')
+        # ])
+
+        # Serialize the deque
+        serialized_data = bytearray()
+
+        # Add each (timestamp, data) tuple to the serialized data
+        while self.data_queue:
+            timestamp, data = self.data_queue.popleft()
+            serialized_data.extend(struct.pack(tuple_format, timestamp, data))
+
+        # Add the final serialization timestamp
+        serialization_timestamp = timestamp_float()
+        # convert this timestamp to bytes
+        # float_bytes = struct.pack('f', my_float)
+        # serialization_timestamp_bytes = struct.pack('d', serialization_timestamp)
+        serialized_data.extend(struct.pack('d', serialization_timestamp))
+
+        # # Print the serialized binary data
+        # print(serialized_data)
+
+        # # Example of deserializing the data back
+        # # First, calculate the number of tuples
+        # n = len(data_deque)
+
+        # # Get the format string for deserialization
+        # format_string = get_format_string(n)
+
+        # # Deserialize the data
+        # deserialized_data = struct.unpack(format_string, serialized_data)
+
+        # # Extract the tuples and the final timestamp
+        # deserialized_tuples = [
+        #     (deserialized_data[i*2], deserialized_data[i*2 + 1])
+        #     for i in range(n)
+        # ]
+        # final_timestamp = deserialized_data[-1]
+
+        # print(deserialized_tuples)
+        # print(final_timestamp)
+        return serialized_data
+
+
     def start_server(self):
         # TODO add a periodic sync time from network with long period
 
         # start server listening on the port
         self.server_socket.listen(1)    # only one connection at a time
         print('Server is started, listening on port', self.server_port)
-
+        print('moving on to main loop')
         # main loop: read sensor data, check wifi connection, and process client requests (or time out and continue, if no client request)
         while True:
             # TODO add a periodic sync time from network with long period
 
             # read sensor into queue
             single_data_row = self.read_single_sensor_data()   # TODO make this a generic sensor read
-            self.data_queue.append(single_data_row)
-            print(f'queue length: {len(self.data_queue)}')
+            if single_data_row is None:
+                print('sensor read failed')
+                continue
+            else:
+                self.data_queue.append(single_data_row)
+                print(f'queue length: {len(self.data_queue)}')
 
             
             # verify wifi connection
@@ -88,6 +163,7 @@ class WifiSensorServer():
                 client_socket, client_address = self.server_socket.accept()
             except Exception:
                 # if timed out, just continue: there is no client request
+                print('timed out, no client request')
                 continue
 
             # if not timed out, process the client request
@@ -111,12 +187,15 @@ class WifiSensorServer():
             elif input_data == 'get':  # TODO: move this functionality to the sensor object
                 print('got get, sending data')
                 # convert the queue to a bytearray and send it
-                data_queue_bytes = b''
-                while self.data_queue:
-                    temp_data = self.data_queue.popleft()
-                    # print(f'popped {repr(temp_data)}, queue length: {len(self.data_queue)}')
-                    data_queue_bytes += temp_data
+                data_queue_bytes = self.convert_queue_to_bytes()
+                # data_queue_bytes = b''
+                # while self.data_queue:
+                #     temp_data = self.data_queue.popleft()
+                #     # print(f'popped {repr(temp_data)}, queue length: {len(self.data_queue)}')
+                #     data_queue_bytes += temp_data
                 client_socket.send(data_queue_bytes)
+#                 self.data_queue.clear()  # TODO: move this functionality to the sensor object
+
                 print('data sent')
             else:
                 # send ECHO
@@ -128,7 +207,8 @@ class WifiSensorServer():
                 if input_data == 'clear':
                     print('got clear, clearing queue')
                     # clear queue
-                    self.data_queue.clear()  # TODO: move this functionality to the sensor object
+                    while self.data_queue:   # TODO: move this functionality to the sensor object
+                        self.data_queue.popleft()
                     print(f'queue length: {len(self.data_queue)}')
                 # if 'reset', reset the ESP32
                 elif input_data == 'reset':
@@ -141,7 +221,7 @@ class WifiSensorServer():
                     # reset machine
                     machine.reset()
                     time.sleep_ms(500)
-            time.sleep_ms(100)                
+            time.sleep_ms(10)                
             client_socket.close() 
             print('socket closed')
 
@@ -161,7 +241,7 @@ class WifiSensorServer():
         timestamp: float, the timestamp of the data
 
         '''
-        return '', timestamp()
+        return timestamp_float(), b''
 
     def sync_time_from_network(self, single_try=False):
         '''
@@ -192,4 +272,7 @@ class WifiRadarServer(WifiSensorServer):
 
     def read_single_sensor_data(self):
         single_data_row = self.sensor.read_single_radar_data()
-        return single_data_row, timestamp()
+        return timestamp_float(), single_data_row
+
+
+
