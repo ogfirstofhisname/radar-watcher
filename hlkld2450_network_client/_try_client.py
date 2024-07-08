@@ -8,19 +8,29 @@ def main():
     print('created client')
     # send an empty message to the server
     while True:
-        success, response = client.transact_with_server('get')
-        # expected response is 'I am alive'
-        # print(f'success: {success}, response: {response}')
-        data_queue, final_timestamp = deserialize_data(response)
-        # print('data_queue:')
-        # print(data_queue)
-        # print(f'final_timestamp: {final_timestamp}')
-        time.sleep(0.5)
-        # # now send a nonempty message to the server
-        # success, response = client.transact_with_server('wallack')
-        # # expected response is 'hello wallack'
-        # # print(f'success: {success}, response: {response}')
-        # time.sleep(4)
+        if client.is_online():
+            success, response = client.transact_with_server('get')
+            if not success:
+                print('Server not responding, waiting and trying again...')
+                time.sleep(1)
+                continue
+            # expected response is 'I am alive'
+            # print(f'success: {success}, response: {response}')
+            data_queue, final_timestamp = deserialize_data(response)
+            # print('data_queue:')
+            # print(data_queue)
+            # print(f'final_timestamp: {final_timestamp}')
+            time.sleep(0.5)
+            # # now send a nonempty message to the server
+            # success, response = client.transact_with_server('wallack')
+            # # expected response is 'hello wallack'
+            # # print(f'success: {success}, response: {response}')
+            # time.sleep(4)
+        else:
+            print('Server is offline, waiting and trying again...')
+            time.sleep(1)
+            client.client_setup()
+            continue
 
     
 import struct

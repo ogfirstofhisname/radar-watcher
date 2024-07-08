@@ -5,13 +5,16 @@ class WifiClient():
     def __init__(self, hostname:str, port:int):
         self.server_hostname = hostname
         self.server_port = port
+        self.server_status_lock = Lock()
+        self.server_ip_lock = Lock()
+        self.last_alive_time_lock = Lock()
         self.client_setup()
     
     def client_setup(self):
         # create locks for server status, server ip, last_alive_time
-        self.server_status_lock = Lock()
-        self.server_ip_lock = Lock()
-        self.last_alive_time_lock = Lock()
+        # self.server_status_lock = Lock()
+        # self.server_ip_lock = Lock()
+        # self.last_alive_time_lock = Lock()
         with self.last_alive_time_lock:
             self.last_alive_time = None
         ip = self._get_ip_address(self.server_hostname)
@@ -35,6 +38,20 @@ class WifiClient():
     def _alive(self):
         with self.server_status_lock:
             self.last_alive_time = time.time()
+
+    def is_online(self):
+        with self.server_status_lock:
+            return self.server_status == 'online'
+        
+    def time_since_last_alive(self):
+        with self.last_alive_time_lock:
+            lat = self.last_alive_time
+        if lat is None:
+            return None
+        else:
+            return time.time() - lat
+        
+        
 
     def was_alive_recently(self, timeout=10):
         with self.last_alive_time_lock:
