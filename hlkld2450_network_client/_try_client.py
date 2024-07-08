@@ -4,7 +4,7 @@ from serial_protocol.serial_protocol import read_radar_data
 
 def main():
     # create a client with hostname 'watchdog0' and port 1704
-    client = WifiClient('192.168.5.38', 1704)
+    client = WifiClient('LD2450_server_0', 1704)
     print('created client')
     # send an empty message to the server
     while True:
