@@ -134,7 +134,6 @@ class WifiSensorServer():
 
 
     def start_server(self):
-        # TODO add a periodic sync time from network with long period
 
         # start server listening on the port
         self.server_socket.listen(1)    # only one connection at a time
@@ -142,15 +141,15 @@ class WifiSensorServer():
         print('moving on to main loop')
         # main loop: read sensor data, check wifi connection, and process client requests (or time out and continue, if no client request)
         while True:
-            # TODO add a periodic sync time from network with long period
 
             # read sensor into queue
-            single_data_row = self.read_single_sensor_data()   # TODO make this a generic sensor read
+            # single_data_row = self.read_single_sensor_data()
+            single_data_row = self.sensor.read_single_sensor_data()
             if single_data_row is None:
                 print('sensor read failed')
                 continue
             else:
-                self.data_queue.append(single_data_row)
+                self.data_queue.append((timestamp_float(), single_data_row))
                 print(f'queue length: {len(self.data_queue)}')
 
             
@@ -243,36 +242,14 @@ class WifiSensorServer():
         '''
         return timestamp_float(), b''
 
-    def sync_time_from_network(self, single_try=False):
-        '''
-        Sync the ESP32's internal RTC with the network time, using the ntptime module.
-
-        Args:
-        single_try: bool, if True, only try once to sync time. If False, try 5 times with increasing wait times for a total of about 60 seconds.
-
-        Returns:
-        success: bool, True if time was successfully synced, False otherwise
-        '''
-        for i in range(5):
-            try:
-                import ntptime  # type: ignore
-                ntptime.settime() # set the rtc datetime from the remote server
-                return True
-            except Exception:
-                if single_try:
-                    break
-                time.sleep(1*2**(i+1))
-        print('could not sync time from network')
-        return False
-
 class WifiRadarServer(WifiSensorServer):
     def sensor_setup(self, uart_rx_pin=17, uart_tx_pin=16):
         from ld2450_radar import HLKLD2450Radar
         self.sensor = HLKLD2450Radar(uart_rx_pin, uart_tx_pin)
 
-    def read_single_sensor_data(self):
-        single_data_row = self.sensor.read_single_radar_data()
-        return timestamp_float(), single_data_row
+    # def read_single_sensor_data(self):
+    #     single_data_row = self.sensor.read_single_radar_data()
+    #     return timestamp_float(), single_data_row
 
 
 

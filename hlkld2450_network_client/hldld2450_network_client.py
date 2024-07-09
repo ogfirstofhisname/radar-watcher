@@ -90,6 +90,7 @@ class WifiClient():
         # TODO add try-except and a retry loop with increasing waits until an exception is raised
         # TODO maybe add some kind of echo on server side
         success = False
+        receive_timestamp = None
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
                 if timeout is not None:
@@ -113,6 +114,7 @@ class WifiClient():
                 self._alive()
                 self._online()
                 success = True
+                receive_timestamp = time.time()
         except socket.timeout:
             # response was not sent promptly. The server may be in some fault state, or simply busy.
             print('Socket timed out')
@@ -134,4 +136,4 @@ class WifiClient():
             print(f'An exception occurred: {e}')
             data = b''
             
-        return success, data
+        return success, data, receive_timestamp

@@ -5,6 +5,16 @@ import time
 REPORT_HEADER = bytes.fromhex('AAFF0300')
 REPORT_TAIL = bytes.fromhex('55CC')
 
+def timestamp_float():
+    # time since epoch in seconds with microsecond precision, equivalent to CPython's time.time()
+    nanoseconds = time.time_ns()
+    # Convert nanoseconds to microseconds
+    microseconds = nanoseconds // 1000
+    # Convert microseconds to seconds (as a float)
+    seconds = 1.0*microseconds / 1_000_000
+#     seconds = seconds + 946684800.0  # correction from ESP32 epoch to Unix epoch
+    return seconds
+
 class HLKLD2450Radar():
     def __init__(self, uart_rx_pin, uart_tx_pin):
         '''
@@ -45,6 +55,20 @@ class HLKLD2450Radar():
                 return None
         serial_port_line = self._read_until(REPORT_TAIL)
         return serial_port_line
+
+    def read_single_sensor_data(self):
+        single_data_row = self.read_single_radar_data()
+        # if data is None, return None
+        if single_data_row is None:
+            return None
+        # if data is not 30 bytes long, return None
+        if len(single_data_row) != 30:
+            return None
+        # if data does not contain the header and tail, return None
+        if REPORT_HEADER not in single_data_row or REPORT_TAIL not in single_data_row:
+            return None
+
+        return single_data_row
 
     def parse_radar_data(self, radar_data):
         '''

@@ -6,17 +6,56 @@ def main():
     # create a client with hostname 'watchdog0' and port 1704
     client = WifiClient('LD2450_server_0', 1704)
     print('created client')
+    clear_success = False
+    while not clear_success:
+        if client.is_online():
+            clear_success, response, receive_timestamp = client.transact_with_server('clear')
+            print(f'sent clear command, success: {clear_success}, response: {response}, receive_timestamp: {receive_timestamp}')
     # send an empty message to the server
     while True:
         if client.is_online():
-            success, response = client.transact_with_server('get')
+            success, response, receive_timestamp = client.transact_with_server('get')
+            print('got response')
             if not success:
                 print('Server not responding, waiting and trying again...')
                 time.sleep(1)
                 continue
             # expected response is 'I am alive'
             # print(f'success: {success}, response: {response}')
-            data_queue, final_timestamp = deserialize_data(response)
+            data_queue, final_timestamp = deserialize_data(response, receive_timestamp)
+            print('data deserialized')
+            for data_time_tuple in data_queue:
+                # timestamp = unpacked_data[i * 2]
+                # data = unpacked_data[i * 2 + 1].rstrip(b'\x00')  # Remove any padding null bytes
+                # data_deque.append((timestamp, data))
+                timestamp, data = data_time_tuple
+                # print(f'timestamp: {timestamp}, data: {data}')
+                all_target_values = read_radar_data(data)
+                if all_target_values is None:
+                    print('got None from read_radar_data')
+                    continue
+                target1_x, target1_y, target1_speed, target1_distance_res, \
+                target2_x, target2_y, target2_speed, target2_distance_res, \
+                target3_x, target3_y, target3_speed, target3_distance_res \
+                    = all_target_values
+                print(f'Target 1 y-coordinate: {target1_y} mm, timestamp: {timestamp}, final_timestamp: {final_timestamp}')
+                # Print the interpreted information for all targets
+                # print(f'Target 1 x-coordinate: {target1_x} mm')
+                # print(f'Target 1 y-coordinate: {target1_y} mm')
+                # print(f'Target 1 speed: {target1_speed} cm/s')
+                # print(f'Target 1 distance res: {target1_distance_res} mm')
+
+                # print(f'Target 2 x-coordinate: {target2_x} mm')
+                # print(f'Target 2 y-coordinate: {target2_y} mm')
+                # print(f'Target 2 speed: {target2_speed} cm/s')
+                # print(f'Target 2 distance res: {target2_distance_res} mm')
+
+                # print(f'Target 3 x-coordinate: {target3_x} mm')
+                # print(f'Target 3 y-coordinate: {target3_y} mm')
+                # print(f'Target 3 speed: {target3_speed} cm/s')
+                # print(f'Target 3 distance res: {target3_distance_res} mm')
+
+                # print('-' * 30)
             # print('data_queue:')
             # print(data_queue)
             # print(f'final_timestamp: {final_timestamp}')
@@ -40,7 +79,7 @@ from collections import deque
 tuple_format = 'd30s'
 
 # Function to deserialize the data
-def deserialize_data(serialized_data):
+def deserialize_data(serialized_data, receive_timestamp):
     # Calculate the number of elements in the deque
     # Each element is 38 bytes long (8 bytes for double + 30 bytes for string)
     element_size = struct.calcsize(tuple_format)
@@ -63,39 +102,19 @@ def deserialize_data(serialized_data):
     
     # Extract the deque elements and the final timestamp
     data_deque = deque()
+    
+    final_timestamp = unpacked_data[-1] # timestamp from the server marking end of transmission
+
+    timestamp_additive_offset = receive_timestamp - final_timestamp # offset to add to each timestamp to get the correct time
+
     for i in range(n):
-        timestamp = unpacked_data[i * 2]
+        timestamp = unpacked_data[i * 2] + timestamp_additive_offset
         data = unpacked_data[i * 2 + 1].rstrip(b'\x00')  # Remove any padding null bytes
         data_deque.append((timestamp, data))
-        all_target_values = read_radar_data(data)
-        if all_target_values is None:
-            continue
-        target1_x, target1_y, target1_speed, target1_distance_res, \
-        target2_x, target2_y, target2_speed, target2_distance_res, \
-        target3_x, target3_y, target3_speed, target3_distance_res \
-            = all_target_values
 
-        # Print the interpreted information for all targets
-        # print(f'Target 1 x-coordinate: {target1_x} mm')
-        print(f'Target 1 y-coordinate: {target1_y} mm')
-        # print(f'Target 1 speed: {target1_speed} cm/s')
-        # print(f'Target 1 distance res: {target1_distance_res} mm')
-
-        # print(f'Target 2 x-coordinate: {target2_x} mm')
-        # print(f'Target 2 y-coordinate: {target2_y} mm')
-        # print(f'Target 2 speed: {target2_speed} cm/s')
-        # print(f'Target 2 distance res: {target2_distance_res} mm')
-
-        # print(f'Target 3 x-coordinate: {target3_x} mm')
-        # print(f'Target 3 y-coordinate: {target3_y} mm')
-        # print(f'Target 3 speed: {target3_speed} cm/s')
-        # print(f'Target 3 distance res: {target3_distance_res} mm')
-
-        # print('-' * 30)
     
-    final_timestamp = unpacked_data[-1]
     
-    return data_deque, final_timestamp
+    return data_deque, final_timestamp + timestamp_additive_offset
 
 
 if __name__ == '__main__':
