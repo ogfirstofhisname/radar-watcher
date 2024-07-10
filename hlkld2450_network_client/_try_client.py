@@ -1,8 +1,24 @@
 import socket, time
-from hldld2450_network_client import WifiClient
+from hlkld2450 import WifiClient, HLKLD2450RemoteSensor
 from serial_protocol.serial_protocol import read_radar_data
 
 def main():
+
+    radar = HLKLD2450RemoteSensor(
+        hostname = 'LD2450_server_0',
+        port = 1704,
+        len_short_queue=1000,
+        len_long_queue=100000
+    )
+
+    radar.run_remote_sensor()
+    exit()
+
+    # radar.run_remote_sensor_thread()
+    # time.sleep(20)
+    # exit()
+
+
     # create a client with hostname 'watchdog0' and port 1704
     client = WifiClient('LD2450_server_0', 1704)
     print('created client')
@@ -11,7 +27,6 @@ def main():
         if client.is_online():
             clear_success, response, receive_timestamp = client.transact_with_server('clear')
             print(f'sent clear command, success: {clear_success}, response: {response}, receive_timestamp: {receive_timestamp}')
-    # send an empty message to the server
     while True:
         if client.is_online():
             success, response, receive_timestamp = client.transact_with_server('get')
@@ -75,46 +90,46 @@ def main():
 import struct
 from collections import deque
 
-# Define the format string for a single tuple (timestamp, data)
-tuple_format = 'd30s'
+# # Define the format string for a single tuple (timestamp, data)
+# tuple_format = 'd30s'
 
-# Function to deserialize the data
-def deserialize_data(serialized_data, receive_timestamp):
-    # Calculate the number of elements in the deque
-    # Each element is 38 bytes long (8 bytes for double + 30 bytes for string)
-    element_size = struct.calcsize(tuple_format)
-    # print(f'element_size: {element_size}')
-    total_size = len(serialized_data)
-    # print(f'total_size: {total_size}')
+# # Function to deserialize the data
+# def deserialize_data(serialized_data, receive_timestamp):
+#     # Calculate the number of elements in the deque
+#     # Each element is 38 bytes long (8 bytes for double + 30 bytes for string)
+#     element_size = struct.calcsize(tuple_format)
+#     # print(f'element_size: {element_size}')
+#     total_size = len(serialized_data)
+#     # print(f'total_size: {total_size}')
     
-    # Subtract the size of the final timestamp (8 bytes for double)
-    n = (total_size - struct.calcsize('d')) // element_size
-    # print(f'n: {n}')
-    # print(f"another calculation: {1.0*(total_size - struct.calcsize('d')) / element_size}")
+#     # Subtract the size of the final timestamp (8 bytes for double)
+#     n = (total_size - struct.calcsize('d')) // element_size
+#     # print(f'n: {n}')
+#     # print(f"another calculation: {1.0*(total_size - struct.calcsize('d')) / element_size}")
     
-    # Define the format string for the entire deque + the final timestamp
-    format_string = f'={tuple_format * n}d'
-    # print(f'format_string: {format_string}, len(format_string): {struct.calcsize(format_string)}')
+#     # Define the format string for the entire deque + the final timestamp
+#     format_string = f'={tuple_format * n}d'
+#     # print(f'format_string: {format_string}, len(format_string): {struct.calcsize(format_string)}')
     
-    # Unpack the data
-    # print(f'len(data): {len(serialized_data)}, len(format_string): {struct.calcsize(format_string)}')
-    unpacked_data = struct.unpack(format_string, serialized_data)
+#     # Unpack the data
+#     # print(f'len(data): {len(serialized_data)}, len(format_string): {struct.calcsize(format_string)}')
+#     unpacked_data = struct.unpack(format_string, serialized_data)
     
-    # Extract the deque elements and the final timestamp
-    data_deque = deque()
+#     # Extract the deque elements and the final timestamp
+#     data_deque = deque()
     
-    final_timestamp = unpacked_data[-1] # timestamp from the server marking end of transmission
+#     final_timestamp = unpacked_data[-1] # timestamp from the server marking end of transmission
 
-    timestamp_additive_offset = receive_timestamp - final_timestamp # offset to add to each timestamp to get the correct time
+#     timestamp_additive_offset = receive_timestamp - final_timestamp # offset to add to each timestamp to get the correct time
 
-    for i in range(n):
-        timestamp = unpacked_data[i * 2] + timestamp_additive_offset
-        data = unpacked_data[i * 2 + 1].rstrip(b'\x00')  # Remove any padding null bytes
-        data_deque.append((timestamp, data))
+#     for i in range(n):
+#         timestamp = unpacked_data[i * 2] + timestamp_additive_offset
+#         data = unpacked_data[i * 2 + 1].rstrip(b'\x00')  # Remove any padding null bytes
+#         data_deque.append((timestamp, data))
 
     
     
-    return data_deque, final_timestamp + timestamp_additive_offset
+#     return data_deque, final_timestamp + timestamp_additive_offset
 
 
 if __name__ == '__main__':
