@@ -25,5 +25,37 @@ Under construction.
 # Software Installation
 Under construction.
 
+# Firmware Installation
+Firmware installation involves 3 steps:
+1. Flashing the MicroPython firmware to the ESP32 board
+2. Editing the server_hostname_cfg.py and wifi_logins.py files for your network
+3. Copying the server files to the ESP32 board
+
+## Flashing the MicroPython Firmware
+### Downloading the Firmware
+Micropython is a binary firmware image that operates a Python interpreter and a file system on the ESP32 module. The firmware can be downloaded from the [MicroPython website](https://micropython.org/download/?port=esp32). Be sure to select the version suitable for your ESP32 board. If you're not 100% sure, just try them out - the wrong firmware shouldn't damage the board.
+### Using Esptool
+Typically, the firmware is flashed to the ESP32 board using the esptool.py script.
+1. Connect the ESP32 board to your computer using a USB cable and find the port it's connected to (in Windows: open Device Manager, look under Ports (COM & LPT)).
+2. Open a terminal with Python installed and run the following command:
+```pip install esptool```
+As a sanity check, run: ```esptool.py -p com<x> chip_id``` (replace com<x> with the port number).
+3. After installation, run:  
+```esptool.py --chip esp32 --port com<x>> erase_flash```  
+to erase the flash memory (replace com<x> with the port number). If you're using a fancy ESP32-S3 module, use ```esp32s3``` instead of ```esp32```.
+4. Finally, run:  
+```esptool.py --chip esp32 --port com<x> --baud 460800 write_flash -z 0x1000 <path_to_firmware>```  
+to flash the firmware (replace com<x> with the port number and <path_to_firmware> with the path to the firmware binary).  
+Example:  
+```esptool.py --chip esp32 --port com4 --baud 460800 write_flash -z 0x1000 esp32-20230426-v1.20.0.bin```  
+If you're using a fancy ESP32-S3 module, use ```esp32s3``` instead of ```esp32```, and ```0``` instead of ```0x1000```.
+
+You're done! The ESP32 board should now be running MicroPython and responsive to serial commands, and can be connected to via a serial terminal (e.g. PuTTY) or a MicroPython-compatible IDE (e.g. Thonny).
+
+## Editing the server_hostname_cfg.py and wifi_logins.py Files
+The server_hostname_cfg.py file holds the hostname alias the remote sensor server will be using - it should be unique to each server (if you'll be using more than one server in your network).  
+The wifi_logins.py file holds the SSID and password of the WiFi network the server will be connecting to - it should be edited so that your ESP32 board can connect to your network.  
+Edit both files before copying them to the ESP32 board.
+
 ### Installing the HLK-LD2450 Project
 Unfortunately, the project isn't structured as a python package - so it needs to be installed manually by cloning the repository and copying serial_protocol.py into a serial_protocol subdirectory in venv/Lib/site-packages.
