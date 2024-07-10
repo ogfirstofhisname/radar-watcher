@@ -39,13 +39,13 @@ Typically, the firmware is flashed to the ESP32 board using the esptool.py scrip
 1. Connect the ESP32 board to your computer using a USB cable and find the port it's connected to (in Windows: open Device Manager, look under Ports (COM & LPT)).
 2. Open a terminal with Python installed and run the following command:
 ```pip install esptool```
-As a sanity check, run: ```esptool.py -p com<x> chip_id``` (replace com<x> with the port number).
+As a sanity check, run: ```esptool.py -p COMX chip_id``` (replace COMX with the port number).
 3. After installation, run:  
-```esptool.py --chip esp32 --port com<x>> erase_flash```  
-to erase the flash memory (replace com<x> with the port number). If you're using a fancy ESP32-S3 module, use ```esp32s3``` instead of ```esp32```.
+```esptool.py --chip esp32 --port COMX erase_flash```  
+to erase the flash memory (replace COMX with the port number). If you're using a fancy ESP32-S3 module, use ```esp32s3``` instead of ```esp32```.
 4. Finally, run:  
-```esptool.py --chip esp32 --port com<x> --baud 460800 write_flash -z 0x1000 <path_to_firmware>```  
-to flash the firmware (replace com<x> with the port number and <path_to_firmware> with the path to the firmware binary).  
+```esptool.py --chip esp32 --port COMX --baud 460800 write_flash -z 0x1000 <path_to_firmware>```  
+to flash the firmware (replace COMX with the port number and <path_to_firmware> with the path to the firmware binary).  
 Example:  
 ```esptool.py --chip esp32 --port com4 --baud 460800 write_flash -z 0x1000 esp32-20230426-v1.20.0.bin```  
 If you're using a fancy ESP32-S3 module, use ```esp32s3``` instead of ```esp32```, and ```0``` instead of ```0x1000```.
@@ -57,5 +57,13 @@ The server_hostname_cfg.py file holds the hostname alias the remote sensor serve
 The wifi_logins.py file holds the SSID and password of the WiFi network the server will be connecting to - it should be edited so that your ESP32 board can connect to your network.  
 Edit both files before copying them to the ESP32 board.
 
+## Copying the Server Files to the ESP32 Board
+The server files should be copied to the ESP32 board using a tool like mpypack.  
+1. Install mpypack by running:  
+```pip install mpypack```
+2. Navigate to the folder containing the server files (```cd _hlkld2450_esp32_upython_server_fs```) and run:  
+```mpypack -p COMX sync```  (replace COMX with the port number)
+
 ### Installing the HLK-LD2450 Project
-Unfortunately, the project isn't structured as a python package - so it needs to be installed manually by cloning the repository and copying serial_protocol.py into a serial_protocol subdirectory in venv/Lib/site-packages.
+Unfortunately, the project isn't structured as a python package - so it needs to be installed manually by cloning the repository and copying serial_protocol.py into a serial_protocol subdirectory in venv/Lib/site-packages.  
+The serial_protocol.py file should also be edited to remove the pyserial import dependency (it's not needed in this project).
