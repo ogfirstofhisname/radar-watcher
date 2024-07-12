@@ -1,136 +1,109 @@
-import socket, time
-from hlkld2450 import WifiClient, HLKLD2450RemoteSensor
+import time, os
+from hlkld2450 import HLKLD2450RemoteSensor
 from serial_protocol.serial_protocol import read_radar_data
-
-def main():
-
-    radar = HLKLD2450RemoteSensor(
-        hostname = 'LD2450_server_0',
-        port = 1704,
-        len_short_queue=1000,
-        len_long_queue=100000
-    )
-
-    radar.run_remote_sensor()
-    exit()
-
-    # radar.run_remote_sensor_thread()
-    # time.sleep(20)
-    # exit()
+os.system('cls')
 
 
-    # create a client with hostname 'watchdog0' and port 1704
-    client = WifiClient('LD2450_server_0', 1704)
-    print('created client')
-    clear_success = False
-    while not clear_success:
-        if client.is_online():
-            clear_success, response, receive_timestamp = client.transact_with_server('clear')
-            print(f'sent clear command, success: {clear_success}, response: {response}, receive_timestamp: {receive_timestamp}')
-    while True:
-        if client.is_online():
-            success, response, receive_timestamp = client.transact_with_server('get')
-            print('got response')
-            if not success:
-                print('Server not responding, waiting and trying again...')
-                time.sleep(1)
-                continue
-            # expected response is 'I am alive'
-            # print(f'success: {success}, response: {response}')
-            data_queue, final_timestamp = deserialize_data(response, receive_timestamp)
-            print('data deserialized')
-            for data_time_tuple in data_queue:
-                # timestamp = unpacked_data[i * 2]
-                # data = unpacked_data[i * 2 + 1].rstrip(b'\x00')  # Remove any padding null bytes
-                # data_deque.append((timestamp, data))
-                timestamp, data = data_time_tuple
-                # print(f'timestamp: {timestamp}, data: {data}')
-                all_target_values = read_radar_data(data)
-                if all_target_values is None:
-                    print('got None from read_radar_data')
-                    continue
-                target1_x, target1_y, target1_speed, target1_distance_res, \
-                target2_x, target2_y, target2_speed, target2_distance_res, \
-                target3_x, target3_y, target3_speed, target3_distance_res \
-                    = all_target_values
-                print(f'Target 1 y-coordinate: {target1_y} mm, timestamp: {timestamp}, final_timestamp: {final_timestamp}')
-                # Print the interpreted information for all targets
-                # print(f'Target 1 x-coordinate: {target1_x} mm')
-                # print(f'Target 1 y-coordinate: {target1_y} mm')
-                # print(f'Target 1 speed: {target1_speed} cm/s')
-                # print(f'Target 1 distance res: {target1_distance_res} mm')
 
-                # print(f'Target 2 x-coordinate: {target2_x} mm')
-                # print(f'Target 2 y-coordinate: {target2_y} mm')
-                # print(f'Target 2 speed: {target2_speed} cm/s')
-                # print(f'Target 2 distance res: {target2_distance_res} mm')
+radar0 = HLKLD2450RemoteSensor(
+    hostname = 'LD2450_server_0',
+    port = 1704,
+    len_short_queue=1000,
+    len_long_queue=100000
+)
 
-                # print(f'Target 3 x-coordinate: {target3_x} mm')
-                # print(f'Target 3 y-coordinate: {target3_y} mm')
-                # print(f'Target 3 speed: {target3_speed} cm/s')
-                # print(f'Target 3 distance res: {target3_distance_res} mm')
+radar1 = HLKLD2450RemoteSensor(
+    hostname = 'LD2450_server_1',
+    port = 1704,
+    len_short_queue=1000,
+    len_long_queue=100000
+)
 
-                # print('-' * 30)
-            # print('data_queue:')
-            # print(data_queue)
-            # print(f'final_timestamp: {final_timestamp}')
-            time.sleep(0.5)
-            # # now send a nonempty message to the server
-            # success, response = client.transact_with_server('wallack')
-            # # expected response is 'hello wallack'
-            # # print(f'success: {success}, response: {response}')
-            # time.sleep(4)
-        else:
-            print('Server is offline, waiting and trying again...')
-            time.sleep(1)
-            client.client_setup()
-            continue
+radar2 = HLKLD2450RemoteSensor(
+    hostname = 'LD2450_server_2',
+    port = 1704,
+    len_short_queue=1000,
+    len_long_queue=100000
+)
 
-    
-import struct
-from collections import deque
+radar3 = HLKLD2450RemoteSensor(
+    hostname = 'LD2450_server_3',
+    port = 1704,
+    len_short_queue=1000,
+    len_long_queue=100000
+)
 
-# # Define the format string for a single tuple (timestamp, data)
-# tuple_format = 'd30s'
+radars = [radar0, radar1, radar2, radar3]
 
-# # Function to deserialize the data
-# def deserialize_data(serialized_data, receive_timestamp):
-#     # Calculate the number of elements in the deque
-#     # Each element is 38 bytes long (8 bytes for double + 30 bytes for string)
-#     element_size = struct.calcsize(tuple_format)
-#     # print(f'element_size: {element_size}')
-#     total_size = len(serialized_data)
-#     # print(f'total_size: {total_size}')
-    
-#     # Subtract the size of the final timestamp (8 bytes for double)
-#     n = (total_size - struct.calcsize('d')) // element_size
-#     # print(f'n: {n}')
-#     # print(f"another calculation: {1.0*(total_size - struct.calcsize('d')) / element_size}")
-    
-#     # Define the format string for the entire deque + the final timestamp
-#     format_string = f'={tuple_format * n}d'
-#     # print(f'format_string: {format_string}, len(format_string): {struct.calcsize(format_string)}')
-    
-#     # Unpack the data
-#     # print(f'len(data): {len(serialized_data)}, len(format_string): {struct.calcsize(format_string)}')
-#     unpacked_data = struct.unpack(format_string, serialized_data)
-    
-#     # Extract the deque elements and the final timestamp
-#     data_deque = deque()
-    
-#     final_timestamp = unpacked_data[-1] # timestamp from the server marking end of transmission
+# # check if the radar's client is initialized
+# print(f'radar0 IP: {radar0.client.get_ip()}')
 
-#     timestamp_additive_offset = receive_timestamp - final_timestamp # offset to add to each timestamp to get the correct time
+# print the ip of all radars
+for radar in radars:
+    print(f'{radar.name} IP: {radar.client.get_ip()}', end=', ')
+print()
 
-#     for i in range(n):
-#         timestamp = unpacked_data[i * 2] + timestamp_additive_offset
-#         data = unpacked_data[i * 2 + 1].rstrip(b'\x00')  # Remove any padding null bytes
-#         data_deque.append((timestamp, data))
+# run radar0
+radar0.run_remote_sensor_thread()
 
-    
-    
-#     return data_deque, final_timestamp + timestamp_additive_offset
+# in a loop, print the time since last alive and fps, get the df and print the length of the long queue
+while True:
+    time.sleep(3)
+    time_since_last_alive = radar0.time_since_last_alive()
+    fps = radar0.get_fps()
+    df = radar0.get_long_queue_df()
+    long_queue_len = len(df)
+    print(f'time_since_last_alive: {time_since_last_alive}, fps: {fps}, long_queue_len: {long_queue_len}')
+    # print(df.head())
 
+exit()
 
-if __name__ == '__main__':
-    main()
+# check if the radar's client is online
+print(f'radar0 client online: {radar0.client.check_if_online()}')
+
+# check 3 more times
+for i in range(3):
+    time.sleep(1)
+    print(f'radar0 client online: {radar0.client.check_if_online()}')
+
+# start thread
+radar0.run_remote_sensor_thread()
+
+# wait 20 seconds and get df, while printing fps, queue lengths and time since last alive
+for i in range(5):
+    fps = radar0.get_fps()
+    short_queue_len = radar0.get_short_queue_length()
+    long_queue_len = radar0.get_long_queue_length()
+    time_since_last_alive = radar0.client.time_since_last_alive()
+    print(f'fps: {fps}, short_queue_len: {short_queue_len}, long_queue_len: {long_queue_len}, time_since_last_alive: {time_since_last_alive}')
+    time.sleep(4)
+df = radar0.get_long_queue_df()
+print(df)
+
+exit()
+
+# radar0.run_remote_sensor_thread()
+# radar1.run_remote_sensor_thread()
+# radar2.run_remote_sensor_thread()
+while True:
+    time.sleep(1.1)
+    # radar0.connect_and_update()
+    radar0.client.check_if_online()
+    t_r0 = radar0.client.time_since_last_alive()
+    # radar1.client.check_if_online()
+    # t_r1 = radar1.client.time_since_last_alive()
+    # radar2.client.check_if_online()
+    # t_r2 = radar2.client.time_since_last_alive()
+    if t_r0 is not None:
+        # round to 2 decimal places
+        t_r0 = round(t_r0, 2)
+        print(f'radar0: {t_r0}')
+    # if t_r1 is not None:
+    #     t_r1 = round(t_r1, 2)
+    # if t_r2 is not None:
+    #     t_r2 = round(t_r2, 2)
+    # print(f'radar0: {t_r0}, radar1: {t_r1}, radar2: {t_r2}')
+# radar.run_remote_sensor_thread()
+# time.sleep(20)
+# exit()
+

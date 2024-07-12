@@ -5,6 +5,7 @@ from serial_protocol.serial_protocol import read_radar_data
 import sys
 import pandas as pd
 
+SOCKET_DEFAULT_TIMEOUT = 3
 
 def get_total_size(obj, seen=None):
     """Recursively finds the total size of an object, including its nested elements."""
@@ -28,83 +29,95 @@ def get_total_size(obj, seen=None):
 
 
 class WifiClient():
-    def __init__(self, hostname:str, port:int):
+    def __init__(self, hostname:str, port:int, socket_timeout=SOCKET_DEFAULT_TIMEOUT):
         self.server_hostname = hostname
         self.server_port = port
+        # create locks for server status, server IP, and last alive time
         self.server_status_lock = Lock()
         self.server_ip_lock = Lock()
         self.last_alive_time_lock = Lock()
-        self.last_alive_time = None
-        self.server_status = None
-        self.server_ip = None
-        self.client_setup()
-    
-    def client_setup(self):
-        # reset status
+        # initialize server status, server IP, and last alive time
+        with self.server_status_lock:
+            self.server_status = None
+        with self.server_ip_lock:
+            self.server_ip = None
         with self.last_alive_time_lock:
             self.last_alive_time = None
-        self._offline()
+        self._socket_timeout = socket_timeout
+        self.init_client()
+    
+    def init_client(self, check_online=False) -> tuple[bool, str]:
+        # puts the client in a "ready for transaction" state
 
-        # attempt to get the server's IP address. This also verifies that the server is online with the correct hostname.
+        # attempt to get the server's IP address
         ip = self._get_ip_address(self.server_hostname)
         if ip is not None:
-            self._online()
-            self._alive()
+            with self.server_ip_lock:
+                self.server_ip = ip
         else:
-            self._offline()
+            return False, 'hostname not found in network'
+        # # create a socket if not already created
+        # if self.socket is None:
+        #     self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #     # set timeout for socket operations
+        #     socket.setdefaulttimeout(3)  # TODO change to about 10 for normal use
+        #     print('socket created and set with timeout')
+        if check_online:
+            # check if the server is online
+            is_online = self.check_if_online()
+            if not is_online:
+                return False, 'Server not online'
+        return True, ''
+            
         
-        # set timeout for socket operations
-        socket.setdefaulttimeout(3)  # TODO change to about 10 for normal use
-        
-    def _online(self):
-        # called when the server is known to be online
-        with self.server_status_lock:
-            self.server_status = 'online'
+    # def _online(self):
+    #     # called when the server is known to be online
+    #     with self.server_status_lock:
+    #         self.server_status = 'online'
 
-    def _offline(self):
-        # called when the server is known to be offline
-        with self.server_status_lock:
-            self.server_status = 'offline'
+    # def _offline(self):
+    #     # called when the server is known to be offline
+    #     with self.server_status_lock:
+    #         self.server_status = 'offline'
 
     def _alive(self):
-        # called when the server is instantaneously known to be alive
+        # called when the server is instantaneously known to be alive, i.e. a response was received from the server
         with self.server_status_lock:
             self.last_alive_time = time.time()
 
-    def is_online(self):
-        '''
-        Returns True if the server is online, False otherwise.
+    # def is_online(self):
+    #     '''
+    #     Returns True if the server is online, False otherwise.
 
-        Returns:
-        bool: True if the server is online, False otherwise.
-        '''
-        with self.server_status_lock:
-            return self.server_status == 'online'
+    #     Returns:
+    #     bool: True if the server is online, False otherwise.
+    #     '''
+    #     with self.server_status_lock:
+    #         return self.server_status == 'online'
         
-    def check_if_online(self, update_ip=True):
+    def check_if_online(self):
         '''
         Actively checks if the server is online, sets the server status accordingly, and returns the result.
-
-        Args:
-        update_ip (bool): If True, the server's IP address will be updated if the server is online.
-
-        Returns:
-        bool: True if the server is online, False otherwise.
         '''
-        ip = self._get_ip_address(self.server_hostname)
-        if ip is not None:
-            self._online()
-            self._alive()
-            if update_ip:
-                with self.server_ip_lock:
-                    self.server_ip = ip
-            return True
-        
+        # send 'echo' to server and check if the response is 'ECHO'
+        is_online = False
+        # if self.socket is None:
+        #     self.init_client()
+        try:
+            success, data, receive_timestamp = self.transact_with_server('echo')
+            if success:
+                is_online = data.decode() == 'ECHO'
+        except Exception as e:
+            pass
+        # if is_online:
+        #     # self._online()
+        #     self._alive()
         else:
-            self._offline()
-            return False
+            # self._offline()
+            pass
+        return is_online
         
-    def time_since_last_alive(self):
+    def time_since_last_alive(self, do_not_round=False):
         '''
         Returns the time since the server was last known to be alive, in seconds.
 
@@ -116,28 +129,28 @@ class WifiClient():
         if lat is None:
             return None
         else:
+            if not do_not_round:
+                return round(time.time() - lat, 3)
             return time.time() - lat
-        
-        
-
-    def was_alive_recently(self, timeout=10):
-        with self.last_alive_time_lock:
-            lat = self.last_alive_time
-        if lat is None:
-            return False
-        else:
-            return time.time() - lat < timeout
+              
+    # def was_alive_recently(self, timeout=10):
+    #     with self.last_alive_time_lock:
+    #         lat = self.last_alive_time
+    #     if lat is None:
+    #         return False
+    #     else:
+    #         return time.time() - lat < timeout
 
     def _get_ip_address(self, hostname):
         try:
             ip = socket.gethostbyname(hostname)
             with self.server_ip_lock:
                 self.server_ip = ip
-            self._online()
+            # self._online()
             return ip
         except socket.gaierror:
-            print("Invalid hostname. Please check the hostname and try again.")
-            self._offline()
+            # print("Invalid hostname. Please check the hostname and try again.")
+            # self._offline()
             return None
 
     def _wait(self):
@@ -155,13 +168,20 @@ class WifiClient():
         bytes: The response from the server.
         '''
         # TODO add try-except and a retry loop with increasing waits until an exception is raised
-        # TODO maybe add some kind of echo on server side
+        # TODO put the socket into an attribute and reuse it
         success = False
         receive_timestamp = None
+        # if self.socket is None:
+        #     raise Exception('Socket not initialized')
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+            # with self.socket as client_socket:
+                
                 if timeout is not None:
                     client_socket.settimeout(timeout)  # Set the timeout for the socket
+                else:
+                    client_socket.settimeout(self._socket_timeout)
+                # print('connecting socket...')
                 client_socket.connect((self.server_ip, self.server_port))
                 # print('connected to server')
                 self._wait()
@@ -171,7 +191,7 @@ class WifiClient():
 
                 data = b""
                 while True:
-                    packet = client_socket.recv(256)  # TODO implement timeout
+                    packet = client_socket.recv(256)  # TODO change to 32768 for normal use
                     if not packet: 
                         break
                     data += packet
@@ -179,18 +199,20 @@ class WifiClient():
                     self._wait()
                 # print(f'got raw data: {repr(data)}')
                 self._alive()
-                self._online()
+                # self._online()
                 success = True
                 receive_timestamp = time.time()
         except socket.timeout:
             # response was not sent promptly. The server may be in some fault state, or simply busy.
-            print('Socket timed out')
-            data = b''
+            # print('Socket timed out')
+            # data = b''
+            data = None
         except ConnectionRefusedError:
             # the server is not accepting connections, may be in some fault state.
-            print('Connection refused')
-            data = b''
-            self._offline()
+            # print('Connection refused')
+            # data = b''
+            data = None
+            # self._offline()
         # except ConnectionResetError:
         #     print('Connection reset')
         #     data = b''
@@ -200,16 +222,22 @@ class WifiClient():
         #     data = b''
         #     self._offline()
         except Exception as e:
-            print(f'An exception occurred: {e}')
-            data = b''
+            print(f'An unusual exception occurred: {e}')
+            # data = b''
+            data = None
             
         return success, data, receive_timestamp
+    
+    def get_ip(self):
+        with self.server_ip_lock:
+            return self.server_ip
     
 
 class HLKLD2450RemoteSensor():
     # includes a wifi client within it
-    def __init__(self, hostname:str, port:int, len_short_queue=330, len_long_queue=100000):
-        self.client = WifiClient(hostname, port)
+    def __init__(self, hostname:str, port:int, len_short_queue=330, len_long_queue=100000, socket_timeout=SOCKET_DEFAULT_TIMEOUT):
+        self.name = hostname
+        self.client = WifiClient(hostname, port, socket_timeout)
         self.thread = None
         # set up queues for data
         self.short_data_queue = deque(maxlen=len_short_queue)
@@ -220,84 +248,98 @@ class HLKLD2450RemoteSensor():
         # set up running flag and lock
         self.running = False
         self.running_lock = Lock()
-        print('created client')
+        # set up an fps attribute and lock
+        self._fps = None
+        self.fps_lock = Lock()
+        # print('created client')
+        # set global socket timeout
+        # socket.setdefaulttimeout(3)  # TODO change to about 10 for normal use
+
+
 
     def run_remote_sensor(self, loop_hold_time=0.5):
         # set running flag to True
         with self.running_lock:
             self.running = True
         # connect and clear buffer loop
+        # print(f'starting the connection and update loop')
         while True:
-            # try to generate a df from the long queue
-            # df = self.get_long_queue_df()
-            # print(f'long queue df: {df.head()}')
             # check if running flag is False
             with self.running_lock:
                 if not self.running:
                     break
             # connect and update
-            self.connect_and_update()
-            if not self.client.is_online():
-                print('Server not online, waiting and trying again...')
+            success, error_msg = self.connect_and_update()
+            if not success:
+                # failed to connect, can't go into the read data loop, so sleep for a bit and try again
+                # print(f'Failed to connect and update')
                 time.sleep(1)
                 continue
             # clear the remote sensor's buffer
             self.clear_remote_buffer()
+            # set up fps calculation
+            _fps_timestamp_queue = deque(maxlen=10)
+            _fps_n_put_in_queues_queue = deque(maxlen=10)
+            with self.fps_lock:
+                self._fps = None
             # read data loop
-            fps_timestamp_queue = deque(maxlen=10)
-            fps_n_put_in_queues_queue = deque(maxlen=10)
+            # print(f'starting the read data loop')
             while True:
                 # check if running flag is False
                 with self.running_lock:
                     if not self.running:
                         break
                 # read data
+                # print('reading data...')
                 success, data, receive_timestamp = self.read_data()
+                # print(f'success: {success}, data: {data[0:4] if data is not None else None}, receive_timestamp: {receive_timestamp}')
                 if not success:
                     # break out of the read data loop back into the connect and update loop
-                    print('Failed to read data, breaking out of read data loop')
+                    # print('Failed to read data, breaking out of read data loop') # this is often the case when the server is online but is still initializing
+                    with self.fps_lock:
+                        self._fps = None
                     time.sleep(1)
                     break
                 
                 # put data into queues
                 n_put_in_queues = self.put_data_into_queues(data, receive_timestamp)
                 # update fps queues
-                fps_timestamp_queue.append(receive_timestamp)
-                fps_n_put_in_queues_queue.append(n_put_in_queues)
-                # print(f'fps based on long queue: {1.0*len(self.long_data_queue) / (time.time() - t0)}')
-                # calculate the fps based on the long queue length and the time since the start of the read data loop. Also get the memory size of the long queue object
-                # with self.long_queue_lock:
-                #     len_long_data_queue = len(self.long_data_queue)
-                #     mem_size = get_total_size(self.long_data_queue)
-                # fps = 1.0*len_long_data_queue / (time.time() - t0)
-                # # print FPS rounded to 2 digits, and memory size in scientific notation
-                # print(f'long queue fps: {fps:.2f}, long queue size: {mem_size:.2e} bytes, avg point size: {mem_size / len_long_data_queue:.2f} bytes, size per hour: {fps * mem_size / len_long_data_queue * 3600:.2e} bytes/hour')
-                if len(fps_timestamp_queue) >= 2:
+                _fps_timestamp_queue.append(receive_timestamp)
+                _fps_n_put_in_queues_queue.append(n_put_in_queues)
+                # calculate fps
+                if len(_fps_timestamp_queue) >= 2:
                     # calculate instantaneous fps
-                    total_n_put_in_queues = sum(fps_n_put_in_queues_queue)
-                    total_time = fps_timestamp_queue[-1] - fps_timestamp_queue[0]
-                    fps = 1.0*total_n_put_in_queues / total_time
-                    print(f'fps: {fps:.2f}')
-
+                    total_n_put_in_queues = sum(_fps_n_put_in_queues_queue)
+                    total_time = _fps_timestamp_queue[-1] - _fps_timestamp_queue[0]
+                    with self.fps_lock:
+                        self._fps = 1.0*total_n_put_in_queues / total_time
                 # sleep for a bit
                 time.sleep(loop_hold_time)
 
+    def get_fps(self, do_not_round=False):
+        with self.fps_lock:
+            temp_fps = self._fps
+        if not do_not_round:
+            if temp_fps is not None:
+                return round(temp_fps, 3)
+        return temp_fps
+
     def connect_and_update(self):
-        self.client.client_setup()
+        success, error_msg = self.client.init_client(check_online=True)
+        return success, error_msg
 
     def clear_remote_buffer(self):
         success, data, receive_timestamp = self.client.transact_with_server('clear')
         try:
             success = success and data.decode() == 'CLEAR'
         except Exception as e:
-            print(f'Exception occurred in clear_remote_buffer(): {e}')
+            # print(f'Exception occurred in clear_remote_buffer(): {e}')
             success = False
         if not success:
-            print('Failed to clear remote buffer')
+            # print('Failed to clear remote buffer')
             return False
         return True
         
-
     def read_data(self):
         success, response, receive_timestamp = self.client.transact_with_server('get')
         if not success:
@@ -317,7 +359,7 @@ class HLKLD2450RemoteSensor():
             for data_time_tuple in data_deque:
                 self.long_data_queue.append(data_time_tuple)
                 # print(f'data tuple appended to long queue: {data_time_tuple}, size: {self.long_data_queue.__sizeof__()} bytes')
-        print(f'data put into queues. len(short): {len(self.short_data_queue)}, len(long): {len(self.long_data_queue)}')
+        # print(f'data put into queues. len(short): {len(self.short_data_queue)}, len(long): {len(self.long_data_queue)}')
         return n_put_in_queues
 
     # TODO pass all the 'alive' functionality to the sensor object...?
@@ -403,10 +445,10 @@ class HLKLD2450RemoteSensor():
                 ]
             )
 
-        try:
-            print(f'parsing short queue took {time.time() - t0} seconds for {len_queue} elements, avg time per element: {(time.time() - t0) / len_queue} seconds')
-        except Exception:
-            pass
+        # try:
+        #     print(f'parsing short queue took {time.time() - t0} seconds for {len_queue} elements, avg time per element: {(time.time() - t0) / len_queue} seconds')
+        # except Exception:
+        #     pass
 
         return df
 
@@ -494,6 +536,9 @@ class HLKLD2450RemoteSensor():
         #####
         return all_target_values + (timestamp,)
 
+    # wrap time_since_last_alive
+    def time_since_last_alive(self):
+        return self.client.time_since_last_alive()
 
 
                 
